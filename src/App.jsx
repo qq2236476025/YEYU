@@ -1,111 +1,88 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 const WHATSAPP_NUMBER = '+1 (213) 913-8552'
 
 const platformOptions = ['TikTok', 'Instagram', 'YouTube Shorts', 'Facebook']
-const messageTypeOptions = ['评论', '私信']
-const cutOptions = ['oval', 'marquise', 'emerald', 'round', 'pear', 'unknown']
-const accountOptions = ['流量号', '品牌号', '转化号']
+const messageTypeOptions = ['comment', 'DM']
+const ringCutOptions = ['oval', 'marquise', 'emerald', 'round', 'pear', 'unknown']
+const accountTypeOptions = ['traffic', 'brand', 'conversion']
 
-const inquiryKeywords = [
-  'price',
-  'pricing',
-  'cost',
-  'how much',
-  'carat',
-  'ct',
-  'custom',
-  'customize',
-  'made to order',
-  'buy',
-  'purchase',
-  'available',
-  'ship',
-  'shipping',
-  'order',
+const outputConfig = [
+  { key: 'casual', title: 'casual native reply' },
+  { key: 'brand', title: 'brand polished reply' },
+  { key: 'conversion', title: 'conversion-friendly reply' },
+  { key: 'playful', title: 'playful reply' },
+  { key: 'short', title: 'short comment reply' },
 ]
 
-const hasInquiryIntent = (text) => {
-  const lowered = text.toLowerCase()
-  return inquiryKeywords.some((keyword) => lowered.includes(keyword))
-}
-
-const toneByAccount = {
-  流量号: 'friendly and playful',
-  品牌号: 'premium and refined',
-  转化号: 'warm and action-oriented',
-}
-
-function buildBaseContext({ platform, messageType, ringCut, accountType, originalText }) {
-  const source = messageType === '私信' ? 'DM' : 'comment'
-  const cutText = ringCut === 'unknown' ? 'cut not specified' : `${ringCut} cut`
-  const tone = toneByAccount[accountType]
-
-  return {
-    source,
-    cutText,
-    tone,
-    originalText,
-    platform,
-  }
-}
-
-function buildReply(style, context, shouldLeadWhatsApp) {
-  const { source, cutText, tone, originalText, platform } = context
-  const safeCut = cutText === 'cut not specified' ? 'the piece' : `the ${cutText} ring`
-  const thanks = source === 'DM' ? 'Thanks for reaching out 💛' : 'Love this question — thank you 💛'
-
-  const uncertaintyLine = /\?|maybe|not sure|unknown/i.test(originalText)
-    ? "If you're still deciding, no rush — I can share options once you know the exact style you want."
-    : ''
-
-  const waLine = shouldLeadWhatsApp
-    ? `For pricing, carat options, and custom details, message us on WhatsApp: ${WHATSAPP_NUMBER}.`
-    : ''
-
-  const styleTemplates = {
-    natural: `${thanks} ${safeCut} looks stunning on ${platform}. ${
-      source === 'comment' ? 'Happy to help here anytime.' : 'I can walk you through it.'
-    } ${waLine} ${uncertaintyLine}`,
-    brand: `Thank you for your message. We appreciate your interest in ${safeCut}. We keep details accurate and only confirm specifications once your preferred design is clear. ${waLine}`,
-    conversion: `Great taste — ${safeCut} is one of our favorites. I can help you with next steps ${
-      source === 'DM' ? 'right here' : 'quickly'
-    }. ${waLine || 'Tell me your target style + budget and I will narrow options for you.'}`,
-  }
-
-  return styleTemplates[style].replace(/\s+/g, ' ').trim()
+const emptyReplies = {
+  casual: '',
+  brand: '',
+  conversion: '',
+  playful: '',
+  short: '',
 }
 
 function App() {
   const [form, setForm] = useState({
     platform: 'TikTok',
-    messageType: '评论',
-    originalText: '',
+    messageType: 'comment',
+    userMessage: '',
+    videoCaption: '',
     ringCut: 'unknown',
-    accountType: '品牌号',
-    needWhatsApp: true,
+    accountType: 'brand',
+    shouldGuideWhatsApp: true,
   })
 
-  const shouldLeadWhatsApp = useMemo(() => {
-    return form.needWhatsApp || hasInquiryIntent(form.originalText)
-  }, [form.needWhatsApp, form.originalText])
+  const [replies, setReplies] = useState(emptyReplies)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const generated = useMemo(() => {
-    const context = buildBaseContext(form)
-
-    return {
-      '轻松自然版': buildReply('natural', context, shouldLeadWhatsApp),
-      '品牌专业版': buildReply('brand', context, shouldLeadWhatsApp),
-      '转化引导版': buildReply('conversion', context, shouldLeadWhatsApp),
+  const onGenerate = async () => {
+    if (!form.userMessage.trim()) {
+      setError('Please enter the user message first.')
+      return
     }
-  }, [form, shouldLeadWhatsApp])
+
+    setError('')
+    setIsLoading(true)
+
+    try {
+      const res = await fetch('/api/generate-replies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(form),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Unable to generate replies right now.')
+      }
+
+      setReplies({
+        casual: data.casual || '',
+        brand: data.brand || '',
+        conversion: data.conversion || '',
+        playful: data.playful || '',
+        short: data.short || '',
+      })
+    } catch (err) {
+      setError(err.message || 'Something went wrong. Please try again in a moment.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const copyText = async (text) => {
+    if (!text) return
+
     try {
       await navigator.clipboard.writeText(text)
-      alert('Copied!')
     } catch {
-      alert('Copy failed. Please copy manually.')
+      setError('Copy failed. Please copy manually.')
     }
   }
 
@@ -117,11 +94,13 @@ function App() {
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 shadow-glow">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Jewelry Reply Assistant</h1>
-          <p className="mt-2 text-sm text-zinc-400">为珠宝品牌账号快速生成自然英文评论/私信回复（本地规则，无 API）。</p>
+          <p className="mt-2 text-sm text-zinc-400">
+            DeepSeek-powered social reply drafts for jewelry accounts (API key secured on backend).
+          </p>
 
           <div className="mt-6 space-y-4">
             <label className="block">
-              <span className="mb-1.5 block text-sm text-zinc-300">平台</span>
+              <span className="mb-1.5 block text-sm text-zinc-300">platform</span>
               <select
                 value={form.platform}
                 onChange={(e) => setForm((s) => ({ ...s, platform: e.target.value }))}
@@ -134,7 +113,7 @@ function App() {
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-sm text-zinc-300">消息类型</span>
+              <span className="mb-1.5 block text-sm text-zinc-300">messageType</span>
               <select
                 value={form.messageType}
                 onChange={(e) => setForm((s) => ({ ...s, messageType: e.target.value }))}
@@ -147,38 +126,49 @@ function App() {
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-sm text-zinc-300">用户原文</span>
+              <span className="mb-1.5 block text-sm text-zinc-300">userMessage</span>
               <textarea
-                rows={5}
-                value={form.originalText}
-                onChange={(e) => setForm((s) => ({ ...s, originalText: e.target.value }))}
+                rows={4}
+                value={form.userMessage}
+                onChange={(e) => setForm((s) => ({ ...s, userMessage: e.target.value }))}
                 className={inputClass}
-                placeholder="Paste the user's exact message here..."
+                placeholder="Paste the user's exact message"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-sm text-zinc-300">videoCaption (optional)</span>
+              <textarea
+                rows={2}
+                value={form.videoCaption}
+                onChange={(e) => setForm((s) => ({ ...s, videoCaption: e.target.value }))}
+                className={inputClass}
+                placeholder="Optional video context"
               />
             </label>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1.5 block text-sm text-zinc-300">戒指切割</span>
+                <span className="mb-1.5 block text-sm text-zinc-300">ringCut</span>
                 <select
                   value={form.ringCut}
                   onChange={(e) => setForm((s) => ({ ...s, ringCut: e.target.value }))}
                   className={inputClass}
                 >
-                  {cutOptions.map((option) => (
+                  {ringCutOptions.map((option) => (
                     <option key={option}>{option}</option>
                   ))}
                 </select>
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-sm text-zinc-300">账号类型</span>
+                <span className="mb-1.5 block text-sm text-zinc-300">accountType</span>
                 <select
                   value={form.accountType}
                   onChange={(e) => setForm((s) => ({ ...s, accountType: e.target.value }))}
                   className={inputClass}
                 >
-                  {accountOptions.map((option) => (
+                  {accountTypeOptions.map((option) => (
                     <option key={option}>{option}</option>
                   ))}
                 </select>
@@ -186,45 +176,58 @@ function App() {
             </div>
 
             <label className="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-900/80 px-4 py-3">
-              <span className="text-sm text-zinc-200">是否需要引导 WhatsApp</span>
+              <span className="text-sm text-zinc-200">shouldGuideWhatsApp</span>
               <input
                 type="checkbox"
-                checked={form.needWhatsApp}
-                onChange={(e) => setForm((s) => ({ ...s, needWhatsApp: e.target.checked }))}
+                checked={form.shouldGuideWhatsApp}
+                onChange={(e) => setForm((s) => ({ ...s, shouldGuideWhatsApp: e.target.checked }))}
                 className="h-5 w-5 accent-amber-300"
               />
             </label>
 
             <div className="rounded-xl border border-amber-200/20 bg-amber-50/5 px-4 py-3 text-sm text-amber-100">
-              WhatsApp: <span className="font-medium">{WHATSAPP_NUMBER}</span>
+              WhatsApp (fixed): <span className="font-medium">{WHATSAPP_NUMBER}</span>
             </div>
+
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={isLoading}
+              className="w-full rounded-xl bg-amber-300 px-4 py-3 text-sm font-semibold text-zinc-900 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isLoading ? 'Generating replies...' : 'Generate Replies'}
+            </button>
+
+            {error ? (
+              <div className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
+            ) : null}
           </div>
         </section>
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 shadow-glow">
-          <h2 className="text-xl font-semibold text-zinc-100">输出结果</h2>
-          <p className="mt-2 text-sm text-zinc-400">自动识别价格/克拉/定制/购买意图，必要时引导到 WhatsApp。</p>
+          <h2 className="text-xl font-semibold text-zinc-100">Generated Outputs</h2>
+          <p className="mt-2 text-sm text-zinc-400">
+            Native-sounding drafts customized by platform, message type, and commercial intent.
+          </p>
 
           <div className="mt-6 space-y-4">
-            {Object.entries(generated).map(([title, text]) => (
-              <article key={title} className="rounded-xl border border-zinc-700 bg-zinc-900/80 p-4">
+            {outputConfig.map(({ key, title }) => (
+              <article key={key} className="rounded-xl border border-zinc-700 bg-zinc-900/80 p-4">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
                   <button
                     type="button"
-                    onClick={() => copyText(text)}
+                    onClick={() => copyText(replies[key])}
                     className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-amber-300 hover:text-amber-100"
                   >
-                    复制
+                    Copy
                   </button>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">{text}</p>
+                <p className="mt-3 min-h-14 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+                  {replies[key] || 'Generate to see this version.'}
+                </p>
               </article>
             ))}
-          </div>
-
-          <div className="mt-5 rounded-xl border border-zinc-700 bg-zinc-900/60 p-3 text-xs text-zinc-400">
-            Reply tone profile: {toneByAccount[form.accountType]}
           </div>
         </section>
       </div>
